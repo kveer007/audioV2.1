@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PiSentinel — Audio Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface2: #1a1a26;
+  --border: #2a2a3e;
+  --accent: #00e5ff;
+  --accent2: #ff4081;
+  --accent3: #b388ff;
+  --text: #e8e8f0;
+  --text-dim: #6b6b8a;
+  --warn: #ffab40;
+  --danger: #ff5252;
+  --live: #00e676;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh; overflow-x: hidden;
+}
+
+/* ── SETUP ─────────────────────────────────────────── */
+#setup-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+
+.setup-card {
+  width: min(420px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 40px 36px;
+  position: relative; overflow: hidden;
+}
+
+.setup-card::before {
+  content: ''; position: absolute; top:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent3), var(--accent2));
+}
+
+.setup-logo {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px; letter-spacing: 4px; color: var(--accent);
+  text-transform: uppercase; margin-bottom: 28px;
+  display: flex; align-items: center; gap: 10px;
+}
+
+.setup-logo::before {
+  content: ''; width:6px; height:6px;
+  background: var(--accent); border-radius:50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+
+.setup-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 28px; font-weight: 700; line-height: 1.2; margin-bottom: 8px;
+}
+
+.setup-sub { font-size: 14px; color: var(--text-dim); margin-bottom: 28px; line-height: 1.6; }
+
+.input-group { margin-bottom: 14px; }
+
+.input-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; letter-spacing: 2px; color: var(--text-dim);
+  text-transform: uppercase; margin-bottom: 6px; display: block;
+}
+
+.input-field {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 14px; color: var(--text);
+  font-family: 'Space Mono', monospace; font-size: 13px; outline: none;
+  transition: border-color .2s;
+}
+.input-field:focus { border-color: var(--accent); }
+.input-field::placeholder { color: var(--text-dim); }
+
+.btn-primary {
+  width: 100%; background: var(--accent); color: #000;
+  border: none; border-radius: 8px; padding: 14px;
+  font-family: 'Space Mono', monospace; font-size: 12px;
+  font-weight: 700; letter-spacing: 2px; cursor: pointer;
+  margin-top: 6px; transition: opacity .15s, transform .1s;
+}
+.btn-primary:active { transform: scale(.98); opacity: .85; }
+
+.btn-danger {
+  background: rgba(255,82,82,.08); border: 1px solid rgba(255,82,82,.3);
+  border-radius: 8px; color: var(--danger); padding: 10px 18px;
+  font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer;
+  transition: all .2s; width: 100%;
+}
+.btn-danger:hover { background: rgba(255,82,82,.15); }
+
+.setup-note {
+  margin-top: 18px; font-size: 12px; color: var(--text-dim); line-height: 1.7;
+  padding: 12px 14px; background: var(--surface2); border-radius: 8px;
+  border-left: 2px solid var(--accent3);
+}
+.setup-note code { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); }
+
+/* ── APP ───────────────────────────────────────────── */
+#app { display: none; flex-direction: column; min-height: 100vh; }
+
+/* ── HEADER ────────────────────────────────────────── */
+.header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 12px 20px; display: flex; align-items: center;
+  justify-content: space-between; position: sticky; top: 0; z-index: 100;
+}
+
+.header-logo {
+  font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700;
+  color: var(--accent); letter-spacing: 1px;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.header-logo::before {
+  content: ''; width:8px; height:8px;
+  background: var(--accent); border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+.live-badge {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+  transition: all .3s; color: var(--text-dim);
+}
+.live-badge.live   { color: var(--live);   border-color: rgba(0,230,118,.3);  background: rgba(0,230,118,.06); }
+.live-badge.offline{ color: var(--danger); border-color: rgba(255,82,82,.3);  background: rgba(255,82,82,.06); }
+
+.live-dot { width:5px; height:5px; border-radius:50%; background:currentColor; animation: pulse 1.5s infinite; }
+
+.settings-btn {
+  background: none; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-dim); padding: 6px 10px; cursor: pointer; font-size: 15px;
+  transition: border-color .2s, color .2s;
+}
+.settings-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── TABS ──────────────────────────────────────────── */
+.tabs {
+  display: flex; background: var(--surface);
+  border-bottom: 1px solid var(--border); padding: 0 20px;
+}
+
+.tab {
+  font-family: 'Space Mono', monospace; font-size: 11px;
+  letter-spacing: 1px; text-transform: uppercase;
+  padding: 13px 16px; color: var(--text-dim); cursor: pointer;
+  border-bottom: 2px solid transparent; transition: color .2s, border-color .2s;
+}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── CONTENT ───────────────────────────────────────── */
+.content { flex:1; padding: 16px; max-width: 900px; margin: 0 auto; width: 100%; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── LIVE TAB ──────────────────────────────────────── */
+.level-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-bottom: 12px;
+}
+
+.card-label {
+  font-family: 'Space Mono', monospace; font-size: 10px;
+  letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 14px;
+}
+
+.level-display { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+
+.level-number {
+  font-family: 'Space Mono', monospace; font-size: 52px;
+  font-weight: 700; color: var(--accent); line-height: 1;
+  min-width: 80px; transition: color .2s;
+}
+
+.level-bar-wrap { flex:1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+.level-bar { height:100%; background: linear-gradient(90deg, var(--accent), var(--accent3)); border-radius:3px; width:0%; transition: width .15s; }
+
+#waveform-canvas { width:100%; height:80px; display:block; border-radius:8px; background: var(--surface2); }
+
+.stream-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+.stream-info { flex:1; min-width:0; }
+.stream-title { font-size:14px; font-weight:500; margin-bottom:4px; }
+.stream-url { font-family:'Space Mono',monospace; font-size:10px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.btn-stream {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); padding: 9px 18px;
+  font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 1px;
+  cursor: pointer; transition: all .2s; white-space: nowrap; flex-shrink: 0;
+}
+.btn-stream:hover { border-color: var(--accent); color: var(--accent); }
+.btn-stream.playing { border-color: var(--accent2); color: var(--accent2); background: rgba(255,64,129,.08); }
+
+/* ── TIMELINE TAB ──────────────────────────────────── */
+.timeline-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; flex-wrap: wrap; gap: 8px;
+}
+.timeline-title { font-family:'Space Mono',monospace; font-size:11px; letter-spacing:2px; color:var(--text-dim); text-transform:uppercase; }
+.timeline-now { font-family:'Space Mono',monospace; font-size:11px; color:var(--accent); }
+
+.timeline-wrap { margin-bottom: 12px; }
+.timeline-scroll {
+  overflow-x: auto; overflow-y: hidden; cursor: grab;
+  border-radius: 8px; border: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.timeline-scroll:active { cursor: grabbing; }
+.timeline-inner { position: relative; height: 80px; }
+#timeline-canvas { display: block; }
+.playhead {
+  position: absolute; top:0; bottom:0; width:2px;
+  background: var(--accent2); pointer-events: none;
+}
+.playhead::before {
+  content:''; position:absolute; top:-3px; left:-4px;
+  width:10px; height:10px; background:var(--accent2); border-radius:50%;
+}
+
+/* Timeline player card */
+.timeline-player-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+
+.tl-graph-scroll {
+  overflow-x: auto; overflow-y: hidden; cursor: crosshair;
+  height: 100px; position: relative;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.tl-graph-inner { position: relative; height: 100px; }
+#tl-graph-canvas { display:block; height:100px; }
+.tl-graph-playhead {
+  position: absolute; top:0; bottom:0; width:2px;
+  background: var(--accent2); pointer-events:none;
+}
+.tl-graph-playhead::before {
+  content:''; position:absolute; top:-3px; left:-4px;
+  width:10px; height:10px; background:var(--accent2); border-radius:50%;
+}
+
+.tl-player-controls {
+  display: flex; align-items: center; gap: 14px; padding: 12px 16px; flex-wrap: wrap;
+}
+.tl-player-time { font-family:'Space Mono',monospace; font-size:14px; font-weight:700; color:var(--text); white-space:nowrap; }
+.tl-player-label { flex:1; font-family:'Space Mono',monospace; font-size:11px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ── RECORDINGS TAB ────────────────────────────────── */
+.rec-player-card {
+  background: var(--surface); border: 1px solid var(--accent);
+  border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+  display: none;
+}
+.rec-player-card.visible { display: block; }
+
+.rec-graph-toolbar {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 6px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.zoom-label { font-family:'Space Mono',monospace; font-size:9px; color:var(--text-dim); margin-right:4px; text-transform:uppercase; letter-spacing:1px; }
+.btn-zoom {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); width:28px; height:28px;
+  font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  transition: border-color .15s, color .15s;
+}
+.btn-zoom:hover { border-color: var(--accent); color: var(--accent); }
+.btn-zoom:active { transform: scale(.9); }
+.zoom-level { font-family:'Space Mono',monospace; font-size:11px; color:var(--accent); min-width:28px; text-align:center; }
+
+.rec-graph-scroll {
+  overflow-x: auto; overflow-y: hidden; cursor: crosshair;
+  height: 100px; position: relative;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.rec-graph-inner { position: relative; height: 100px; }
+#rec-graph-canvas { display:block; height:100px; }
+.rec-graph-playhead {
+  position: absolute; top:0; bottom:0; width:2px;
+  background: var(--accent2); pointer-events:none; left:0;
+}
+.rec-graph-playhead::before {
+  content:''; position:absolute; top:-3px; left:-4px;
+  width:10px; height:10px; background:var(--accent2); border-radius:50%;
+}
+
+.rec-player-controls {
+  display:flex; align-items:center; gap:14px; padding:12px 16px; flex-wrap:wrap;
+}
+.rec-player-time { font-family:'Space Mono',monospace; font-size:14px; font-weight:700; color:var(--text); white-space:nowrap; }
+.rec-player-label { flex:1; font-family:'Space Mono',monospace; font-size:11px; color:var(--accent); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Play button */
+.btn-play {
+  width:44px; height:44px; background:var(--accent); border:none;
+  border-radius:50%; color:#000; font-size:16px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; transition:transform .1s, opacity .2s;
+}
+.btn-play:active { transform: scale(.9); }
+.btn-play:disabled { opacity:.35; cursor:not-allowed; }
+
+/* Recordings list */
+.recordings-list { display:flex; flex-direction:column; gap:8px; }
+
+.recording-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 18px;
+  display: flex; align-items: center; gap: 14px;
+  cursor: pointer; transition: border-color .2s, background .2s;
+}
+.recording-item:hover  { border-color: var(--accent3); background: var(--surface2); }
+.recording-item.active { border-color: var(--accent);  background: rgba(0,229,255,.05); }
+
+.rec-icon {
+  width:36px; height:36px; background:var(--surface2); border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; flex-shrink:0;
+}
+.rec-info { flex:1; min-width:0; }
+.rec-time { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; margin-bottom:3px; }
+.rec-meta { font-size:12px; color:var(--text-dim); display:flex; gap:12px; }
+.rec-activity { width:80px; height:24px; flex-shrink:0; border-radius:3px; }
+
+.no-data { text-align:center; padding:40px 20px; color:var(--text-dim); font-family:'Space Mono',monospace; font-size:12px; letter-spacing:1px; line-height:2; }
+
+/* Error */
+.error-banner {
+  background:rgba(255,82,82,.1); border:1px solid rgba(255,82,82,.3);
+  border-radius:8px; padding:12px 16px; font-size:13px; color:var(--danger);
+  margin-bottom:12px; display:none;
+}
+
+/* ── SETTINGS ──────────────────────────────────────── */
+.settings-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.75);
+  z-index:200; display:none; align-items:flex-end; justify-content:center;
+}
+.settings-overlay.open { display:flex; }
+.settings-panel {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:20px 20px 0 0; padding:24px 22px 40px;
+  width:min(500px,100%); max-height:80vh; overflow-y:auto;
+}
+.settings-handle { width:36px; height:3px; background:var(--border); border-radius:2px; margin:0 auto 22px; }
+.settings-section-title { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:3px; color:var(--text-dim); text-transform:uppercase; margin-bottom:14px; }
+
+@media(max-width:480px) {
+  .content { padding:10px; }
+  .level-number { font-size:38px; }
+  .tab { padding:11px 10px; font-size:10px; }
+  .rec-activity { width:50px; }
+}
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-logo">PiSentinel</div>
+    <div class="setup-title">Audio<br>Monitor</div>
+    <div class="setup-sub">Connect to your Pi via Tailscale.</div>
+    <div class="input-group">
+      <label class="input-label">Tailscale Hostname</label>
+      <input class="input-field" id="setup-ip" type="text"
+        placeholder="mypi.tailaeb948.ts.net"
+        autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="input-group">
+      <label class="input-label">API Port</label>
+      <input class="input-field" id="setup-port" type="text" value="8090">
+    </div>
+    <div class="input-group">
+      <label class="input-label">Stream Port</label>
+      <input class="input-field" id="setup-stream-port" type="text" value="8888">
+    </div>
+    <button class="btn-primary" onclick="connect()">CONNECT</button>
+    <div class="setup-note">
+      Both API and stream use HTTPS via your Tailscale hostname.<br>
+      Example: <code>mypi.tailaeb948.ts.net</code>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+
+  <!-- Settings overlay -->
+  <div class="settings-overlay" id="settings-overlay" onclick="closeSettings(event)">
+    <div class="settings-panel">
+      <div class="settings-handle"></div>
+      <div class="settings-section-title">Connection</div>
+      <div class="input-group">
+        <label class="input-label">Tailscale Hostname</label>
+        <input class="input-field" id="settings-ip" type="text">
+      </div>
+      <div class="input-group">
+        <label class="input-label">API Port</label>
+        <input class="input-field" id="settings-port" type="text">
+      </div>
+      <div class="input-group">
+        <label class="input-label">Stream Port</label>
+        <input class="input-field" id="settings-stream-port" type="text">
+      </div>
+      <button class="btn-primary" onclick="saveSettings()" style="margin-bottom:12px">SAVE & RECONNECT</button>
+      <button class="btn-danger" onclick="resetApp()">Reset &amp; Disconnect</button>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="header-logo">PiSentinel</div>
+    <div class="header-right">
+      <div class="live-badge" id="live-badge">
+        <div class="live-dot"></div>
+        <span id="live-status">CONNECTING</span>
+      </div>
+      <button class="settings-btn" onclick="openSettings()">⚙</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('live',this)">Live</div>
+    <div class="tab" onclick="switchTab('timeline',this)">Timeline</div>
+    <div class="tab" onclick="switchTab('recordings',this)">Recordings</div>
+  </div>
+
+  <div class="content">
+    <div class="error-banner" id="error-banner"></div>
+
+    <!-- LIVE TAB -->
+    <div class="tab-panel active" id="tab-live">
+      <div class="level-card">
+        <div class="card-label">Live Audio Level</div>
+        <div class="level-display">
+          <div class="level-number" id="level-num">—</div>
+          <div class="level-bar-wrap">
+            <div class="level-bar" id="level-bar"></div>
+          </div>
+        </div>
+        <canvas id="waveform-canvas" height="80"></canvas>
+      </div>
+      <div class="stream-card">
+        <div class="stream-info">
+          <div class="stream-title">🎙 Audio Stream</div>
+          <div class="stream-url" id="stream-url-label">—</div>
+        </div>
+        <button class="btn-stream" id="btn-play-stream" onclick="toggleStream()">▶ PLAY</button>
+      </div>
+    </div>
+
+    <!-- TIMELINE TAB -->
+    <div class="tab-panel" id="tab-timeline">
+      <div class="timeline-header">
+        <div class="timeline-title">12-Hour Activity</div>
+        <div class="timeline-now" id="timeline-now">—</div>
+      </div>
+      <div class="timeline-wrap">
+        <div class="timeline-scroll" id="timeline-scroll">
+          <div class="timeline-inner" id="timeline-inner">
+            <canvas id="timeline-canvas" height="80"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-player-card">
+        <div class="tl-graph-scroll" id="tl-graph-scroll">
+          <div class="tl-graph-inner" id="tl-graph-inner">
+            <canvas id="tl-graph-canvas" height="100"></canvas>
+            <div class="tl-graph-playhead" id="tl-graph-playhead" style="display:none"></div>
+          </div>
+        </div>
+        <div class="tl-player-controls">
+          <button class="btn-play" id="tl-btn-play" onclick="toggleTlPlay()" style="width:40px;height:40px;font-size:14px" disabled>▶</button>
+          <div class="tl-player-time" id="tl-player-time">—:——:——</div>
+          <div class="tl-player-label" id="tl-player-label">Tap the graph above to play</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RECORDINGS TAB -->
+    <div class="tab-panel" id="tab-recordings">
+      <div class="rec-player-card" id="rec-player-card">
+        <div class="rec-graph-toolbar">
+          <span class="zoom-label">ZOOM</span>
+          <button class="btn-zoom" onclick="recZoom(-1)">−</button>
+          <span class="zoom-level" id="rec-zoom-label">1×</span>
+          <button class="btn-zoom" onclick="recZoom(+1)">+</button>
+        </div>
+        <div class="rec-graph-scroll" id="rec-graph-scroll">
+          <div class="rec-graph-inner" id="rec-graph-inner">
+            <canvas id="rec-graph-canvas" height="100"></canvas>
+            <div class="rec-graph-playhead" id="rec-graph-playhead"></div>
+          </div>
+        </div>
+        <div class="rec-player-controls">
+          <button class="btn-play" id="rec-btn-play" onclick="toggleRecPlay()" style="width:40px;height:40px;font-size:14px" disabled>▶</button>
+          <div class="rec-player-time" id="rec-player-time">—:——:——</div>
+          <div class="rec-player-label" id="rec-player-label">Select a recording below</div>
+        </div>
+      </div>
+      <div class="recordings-list" id="recordings-list">
+        <div class="no-data">Loading recordings…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────
+let PI_HOST = '', API_PORT = 8090, STREAM_PORT = 8888;
+let activityData = [];
+let fileList = [];
+let waveHistory = new Array(200).fill(0);
+let levelPollInterval = null;
+let filePollInterval  = null;
+let hlsInstance = null;
+let streamAudio = null;
+let isStreamPlaying = false;
+let recIsPlaying = false;
+let currentFile = null;
+let currentStartTs = 0;
+let tlAudio = null;
+let tlIsPlaying = false;
+let tlCurrentFile = null;
+let tlCurrentStartTs = 0;
+let recZoomLevel = 1;
+const REC_ZOOM_LEVELS = [1, 2, 4, 8];
+const TIMELINE_HOURS = 12;
+const TL_PX_PER_MIN = 3;
+
+// ── INIT ──────────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Try loading saved config (support both old and new key)
+  let saved = localStorage.getItem('pisentinel_v3') || localStorage.getItem('pisentinel_v2') || localStorage.getItem('pisentinel_config');
+  if (saved) {
+    try {
+      const c = JSON.parse(saved);
+      PI_HOST     = c.host || c.ip || '';
+      API_PORT    = parseInt(c.apiPort)    || 8090;
+      STREAM_PORT = parseInt(c.streamPort) || 8888;
+      if (PI_HOST) { launchApp(); return; }
+    } catch(e) {}
+  }
+  // Show setup screen
+  document.getElementById('setup-screen').style.display = 'flex';
+});
+
+function apiUrl(path)    { return `https://${PI_HOST}:${API_PORT}${path}`; }
+function streamHlsUrl()  { return `https://${PI_HOST}:${STREAM_PORT}/audio/index.m3u8`; }
+
+function saveConfig() {
+  localStorage.setItem('pisentinel_v3', JSON.stringify({ host: PI_HOST, apiPort: API_PORT, streamPort: STREAM_PORT }));
+}
+
+function connect() {
+  const host = document.getElementById('setup-ip').value.trim();
+  const ap   = parseInt(document.getElementById('setup-port').value)        || 8090;
+  const sp   = parseInt(document.getElementById('setup-stream-port').value) || 8888;
+  if (!host) { alert('Please enter your Tailscale hostname'); return; }
+  PI_HOST = host; API_PORT = ap; STREAM_PORT = sp;
+  saveConfig();
+  launchApp();
+}
+
+function launchApp() {
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('stream-url-label').textContent = streamHlsUrl();
+  initWaveform();
+  initTimeline();
+  startPolling();
+  loadRecordings();
+}
+
+// ── SETTINGS ──────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-ip').value          = PI_HOST;
+  document.getElementById('settings-port').value        = API_PORT;
+  document.getElementById('settings-stream-port').value = STREAM_PORT;
+  document.getElementById('settings-overlay').classList.add('open');
+}
+
+function closeSettings(e) {
+  if (e.target === document.getElementById('settings-overlay'))
+    document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function saveSettings() {
+  const host = document.getElementById('settings-ip').value.trim();
+  const ap   = parseInt(document.getElementById('settings-port').value)        || 8090;
+  const sp   = parseInt(document.getElementById('settings-stream-port').value) || 8888;
+  if (!host) return;
+  PI_HOST = host; API_PORT = ap; STREAM_PORT = sp;
+  saveConfig();
+  document.getElementById('settings-overlay').classList.remove('open');
+  document.getElementById('stream-url-label').textContent = streamHlsUrl();
+  stopStream();
+  stopPolling();
+  startPolling();
+  loadRecordings();
+}
+
+function resetApp() {
+  ['pisentinel_v3','pisentinel_v2','pisentinel_config'].forEach(k => localStorage.removeItem(k));
+  location.reload();
+}
+
+// ── TABS ──────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'timeline')   { renderTimeline(); renderTlGraph(); }
+  if (name === 'recordings') loadRecordings();
+}
+
+// ── POLLING ───────────────────────────────────────────
+function startPolling() {
+  fetchActivity();
+  levelPollInterval = setInterval(fetchActivity, 3000);
+  filePollInterval  = setInterval(loadRecordings, 60000);
+}
+
+function stopPolling() {
+  clearInterval(levelPollInterval);
+  clearInterval(filePollInterval);
+}
+
+async function fetchActivity() {
+  try {
+    const r = await fetch(apiUrl('/activity'), { cache: 'no-cache' });
+    if (!r.ok) throw new Error('not ok');
+    const data = await r.json();
+    if (!Array.isArray(data)) throw new Error('bad data');
+    activityData = data;
+    updateLiveLevel();
+    if (document.getElementById('tab-timeline').classList.contains('active')) {
+      renderTimeline(); renderTlGraph();
+    }
+    if (currentFile && document.getElementById('tab-recordings').classList.contains('active')) {
+      drawRecGraph(currentStartTs);
+    }
+    setStatus('live');
+  } catch(e) {
+    setStatus('offline');
+  }
+}
+
+function setStatus(s) {
+  const badge = document.getElementById('live-badge');
+  const label = document.getElementById('live-status');
+  badge.className = 'live-badge ' + s;
+  label.textContent = s.toUpperCase();
+}
+
+// ── LIVE LEVEL ────────────────────────────────────────
+function updateLiveLevel() {
+  if (!activityData.length) return;
+  const lv = activityData[activityData.length - 1].l;
+  document.getElementById('level-num').textContent = lv;
+  document.getElementById('level-bar').style.width = lv + '%';
+  const el = document.getElementById('level-num');
+  el.style.color = lv > 70 ? 'var(--danger)' : lv > 40 ? 'var(--warn)' : 'var(--accent)';
+  waveHistory.push(lv); waveHistory.shift();
+  drawWaveform();
+}
+
+// ── WAVEFORM ──────────────────────────────────────────
+function initWaveform() {
+  const c = document.getElementById('waveform-canvas');
+  new ResizeObserver(() => { c.width = c.offsetWidth; drawWaveform(); }).observe(c);
+  c.width = c.offsetWidth;
+}
+
+function drawWaveform() {
+  const c = document.getElementById('waveform-canvas');
+  const ctx = c.getContext('2d');
+  const w = c.width, h = c.height;
+  ctx.clearRect(0, 0, w, h);
+  const bw = Math.max(2, w / waveHistory.length - 1);
+  waveHistory.forEach((v, i) => {
+    const bh = Math.max(2, (v / 100) * h * .85);
+    const alpha = .3 + (i / waveHistory.length) * .7;
+    ctx.fillStyle = v > 70 ? `rgba(255,82,82,${alpha})` : v > 40 ? `rgba(255,171,64,${alpha})` : `rgba(0,229,255,${alpha})`;
+    ctx.fillRect(i * (bw + 1), h - bh, bw, bh);
+  });
+}
+
+// ── LIVE STREAM ───────────────────────────────────────
+function stopStream() {
+  if (hlsInstance)  { hlsInstance.destroy(); hlsInstance = null; }
+  if (streamAudio)  { streamAudio.pause(); streamAudio.src = ''; streamAudio = null; }
+  const btn = document.getElementById('btn-play-stream');
+  btn.textContent = '▶ PLAY'; btn.classList.remove('playing');
+  isStreamPlaying = false;
+}
+
+function toggleStream() {
+  if (isStreamPlaying) { stopStream(); return; }
+  if (recIsPlaying) stopRecPlay();
+  if (tlIsPlaying)  stopTlPlay();
+
+  const url = streamHlsUrl();
+  document.getElementById('btn-play-stream').textContent = '■ STOP';
+  document.getElementById('btn-play-stream').classList.add('playing');
+  isStreamPlaying = true;
+
+  if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+    streamAudio = new Audio();
+    hlsInstance = new Hls({ lowLatencyMode: true });
+    hlsInstance.loadSource(url);
+    hlsInstance.attachMedia(streamAudio);
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => streamAudio.play().catch(()=>{}));
+    hlsInstance.on(Hls.Events.ERROR, (e, d) => { if (d.fatal) { stopStream(); showError('Stream error — is audio-stream running?'); } });
+  } else if (streamAudio && streamAudio.canPlayType('application/vnd.apple.mpegurl')) {
+    streamAudio = new Audio(url);
+    streamAudio.play().catch(()=>{});
+  } else {
+    stopStream();
+    showError('HLS not supported in this browser.');
+  }
+}
+
+// ── TIMELINE OVERVIEW STRIP ───────────────────────────
+function initTimeline() {
+  setupScrollDrag('timeline-scroll', null);
+  setupScrollDrag('tl-graph-scroll', tlGraphClick);
+  setupScrollDrag('rec-graph-scroll', recGraphClick);
+}
+
+function setupScrollDrag(scrollId, clickHandler) {
+  const el = document.getElementById(scrollId);
+  if (!el) return;
+  let startX = 0, startScroll = 0, dragging = false, moved = false;
+
+  el.addEventListener('mousedown', e => {
+    dragging = true; moved = false;
+    startX = e.clientX; startScroll = el.scrollLeft;
+    el.style.cursor = 'grabbing'; e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 4) moved = true;
+    el.scrollLeft = startScroll - dx;
+  });
+  window.addEventListener('mouseup', e => {
+    if (!dragging) return;
+    dragging = false; el.style.cursor = 'crosshair';
+    if (!moved && clickHandler) clickHandler(e);
+  });
+
+  el.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX; startScroll = el.scrollLeft; moved = false;
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    const dx = e.touches[0].clientX - startX;
+    if (Math.abs(dx) > 4) moved = true;
+    el.scrollLeft = startScroll - dx;
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!moved && clickHandler) clickHandler(e.changedTouches[0]);
+  });
+}
+
+function renderTimeline() {
+  const canvas = document.getElementById('timeline-canvas');
+  const scroll = document.getElementById('timeline-scroll');
+  const inner  = document.getElementById('timeline-inner');
+  const now = Date.now() / 1000;
+  const totalMins = TIMELINE_HOURS * 60;
+  const totalW = Math.max(scroll.offsetWidth || 300, totalMins * 2);
+  canvas.width = totalW; canvas.height = 80;
+  inner.style.width = totalW + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#1a1a26'; ctx.fillRect(0, 0, totalW, 80);
+
+  activityData.forEach(d => {
+    const age = now - d.t;
+    if (age > TIMELINE_HOURS * 3600 || age < 0) return;
+    const x = ((TIMELINE_HOURS * 3600 - age) / (TIMELINE_HOURS * 3600)) * totalW;
+    const bh = Math.max(2, (d.l / 100) * 68);
+    const a = .5 + (d.l / 100) * .5;
+    ctx.fillStyle = d.l > 70 ? `rgba(255,82,82,${a})` : d.l > 40 ? `rgba(255,171,64,${a})` : `rgba(0,229,255,${a*.7})`;
+    ctx.fillRect(x - 1, 80 - bh, 3, bh);
+  });
+
+  ctx.font = '8px Space Mono, monospace';
+  for (let h = 0; h <= TIMELINE_HOURS; h++) {
+    const x = (h / TIMELINE_HOURS) * totalW;
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 80); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    const d = new Date((now - (TIMELINE_HOURS - h) * 3600) * 1000);
+    ctx.fillText(`${d.getHours().toString().padStart(2,'0')}:00`, x + 3, 11);
+  }
+  ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(totalW, 0); ctx.lineTo(totalW, 80); ctx.stroke();
+  scroll.scrollLeft = totalW;
+  document.getElementById('timeline-now').textContent =
+    new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+}
+
+// ── TIMELINE PLAYER GRAPH ─────────────────────────────
+function renderTlGraph() {
+  const canvas = document.getElementById('tl-graph-canvas');
+  const scroll = document.getElementById('tl-graph-scroll');
+  const inner  = document.getElementById('tl-graph-inner');
+  const now = Date.now() / 1000;
+  const totalMins = TIMELINE_HOURS * 60;
+  const totalW = Math.max(scroll.offsetWidth || 300, totalMins * TL_PX_PER_MIN);
+  canvas.width = totalW; canvas.height = 100;
+  inner.style.width = totalW + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#1a1a26'; ctx.fillRect(0, 0, totalW, 100);
+
+  activityData.forEach(d => {
+    const age = now - d.t;
+    if (age > TIMELINE_HOURS * 3600 || age < 0) return;
+    const x = ((TIMELINE_HOURS * 3600 - age) / (TIMELINE_HOURS * 3600)) * totalW;
+    const bh = Math.max(2, (d.l / 100) * 88);
+    const a = .5 + (d.l / 100) * .5;
+    ctx.fillStyle = d.l > 70 ? `rgba(255,82,82,${a})` : d.l > 40 ? `rgba(255,171,64,${a})` : `rgba(0,229,255,${a*.7})`;
+    ctx.fillRect(x - 1, 100 - bh, 4, bh);
+  });
+
+  ctx.font = '8px Space Mono, monospace';
+  for (let m = 0; m <= totalMins; m += 15) {
+    const x = (m / totalMins) * totalW;
+    const isHour = m % 60 === 0;
+    ctx.strokeStyle = isHour ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = isHour ? 1 : 0.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 100); ctx.stroke();
+    if (isHour) {
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      const d = new Date((now - (TIMELINE_HOURS * 3600 - m * 60)) * 1000);
+      ctx.fillText(`${d.getHours().toString().padStart(2,'0')}:00`, x + 3, 11);
+    }
+  }
+
+  fileList.forEach(f => {
+    const age = now - f.start;
+    if (age > TIMELINE_HOURS * 3600 || age < 0) return;
+    const x = ((TIMELINE_HOURS * 3600 - age) / (TIMELINE_HOURS * 3600)) * totalW;
+    ctx.strokeStyle = 'rgba(179,136,255,0.2)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 100); ctx.stroke();
+  });
+
+  ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(totalW, 0); ctx.lineTo(totalW, 100); ctx.stroke();
+  scroll.scrollLeft = totalW;
+}
+
+function tlGraphClick(e) {
+  const canvas = document.getElementById('tl-graph-canvas');
+  const scroll = document.getElementById('tl-graph-scroll');
+  const rect   = scroll.getBoundingClientRect();
+  const clickX = (e.clientX - rect.left) + scroll.scrollLeft;
+  const now    = Date.now() / 1000;
+  const startTs = now - TIMELINE_HOURS * 3600;
+  const clickTs = startTs + (clickX / canvas.width) * TIMELINE_HOURS * 3600;
+  tlSeekToTimestamp(clickTs);
+}
+
+async function tlSeekToTimestamp(ts) {
+  const file = fileList.find(f => ts >= f.start && ts < f.end);
+  if (!file) { document.getElementById('tl-player-label').textContent = 'No recording at this time.'; return; }
+  const offset = ts - file.start;
+  tlCurrentFile = file.name; tlCurrentStartTs = file.start;
+
+  if (!tlAudio) {
+    tlAudio = new Audio();
+    tlAudio.ontimeupdate = updateTlTime;
+    tlAudio.onended = () => { tlIsPlaying = false; document.getElementById('tl-btn-play').textContent = '▶'; };
+    tlAudio.onerror = () => { document.getElementById('tl-player-label').textContent = 'Error loading.'; document.getElementById('tl-btn-play').disabled = false; };
+  }
+
+  document.getElementById('tl-btn-play').disabled = true;
+  document.getElementById('tl-player-label').textContent = 'Loading…';
+
+  if (tlAudio.getAttribute('data-src') !== file.name) {
+    tlAudio.src = apiUrl('/audio/' + file.name);
+    tlAudio.setAttribute('data-src', file.name);
+    tlAudio.load();
+  }
+
+  tlAudio.oncanplay = () => {
+    tlAudio.oncanplay = null;
+    tlAudio.currentTime = Math.min(offset, (tlAudio.duration || 3600) - 1);
+    tlAudio.play().catch(()=>{});
+    tlIsPlaying = true;
+    document.getElementById('tl-btn-play').textContent = '⏸';
+    document.getElementById('tl-btn-play').disabled = false;
+    document.getElementById('tl-player-label').textContent =
+      new Date(file.start * 1000).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  };
+}
+
+function updateTlTime() {
+  if (!tlAudio) return;
+  const t = tlAudio.currentTime;
+  const dur = tlAudio.duration || 3600;
+  document.getElementById('tl-player-time').textContent =
+    new Date((tlCurrentStartTs + t) * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+  const canvas = document.getElementById('tl-graph-canvas');
+  const scroll = document.getElementById('tl-graph-scroll');
+  const now = Date.now() / 1000;
+  const startTs = now - TIMELINE_HOURS * 3600;
+  const x = ((tlCurrentStartTs + t - startTs) / (TIMELINE_HOURS * 3600)) * canvas.width;
+  const ph = document.getElementById('tl-graph-playhead');
+  ph.style.display = 'block'; ph.style.left = x + 'px';
+
+  const vl = scroll.scrollLeft, vr = vl + scroll.offsetWidth;
+  if (x < vl + 40 || x > vr - 40) scroll.scrollLeft = x - scroll.offsetWidth / 2;
+}
+
+function toggleTlPlay() {
+  if (!tlAudio || !tlAudio.src) return;
+  if (tlIsPlaying) { tlAudio.pause(); document.getElementById('tl-btn-play').textContent = '▶'; tlIsPlaying = false; }
+  else { tlAudio.play(); document.getElementById('tl-btn-play').textContent = '⏸'; tlIsPlaying = true; }
+}
+
+function stopTlPlay() {
+  if (tlAudio) tlAudio.pause();
+  tlIsPlaying = false;
+  document.getElementById('tl-btn-play').textContent = '▶';
+}
+
+// ── RECORDINGS LIST ───────────────────────────────────
+async function loadRecordings() {
+  try {
+    const r = await fetch(apiUrl('/files'), { cache: 'no-cache' });
+    if (!r.ok) throw new Error();
+    fileList = await r.json();
+    renderRecordingsList();
+  } catch(e) {
+    document.getElementById('recordings-list').innerHTML =
+      '<div class="no-data">Cannot reach Pi API.<br>Check connection.</div>';
+  }
+}
+
+function renderRecordingsList() {
+  const list = document.getElementById('recordings-list');
+  if (!fileList.length) { list.innerHTML = '<div class="no-data">No recordings yet.</div>'; return; }
+
+  list.innerHTML = [...fileList].reverse().map(f => {
+    const d = new Date(f.start * 1000);
+    const label = d.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const sizeMB = (f.size / 1048576).toFixed(1);
+    const dur = Math.round((f.end - f.start) / 60);
+    return `<div class="recording-item${currentFile===f.name?' active':''}" onclick="playRecording('${f.name}',${f.start})">
+      <div class="rec-icon">🎙</div>
+      <div class="rec-info">
+        <div class="rec-time">${label}</div>
+        <div class="rec-meta"><span>${sizeMB} MB</span><span>${dur} min</span></div>
+      </div>
+      <canvas class="rec-activity" id="mini-${f.name}" width="80" height="24"></canvas>
+    </div>`;
+  }).join('');
+
+  fileList.forEach(f => {
+    const c = document.getElementById('mini-' + f.name);
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const rel = activityData.filter(d => d.t >= f.start && d.t < f.end);
+    if (!rel.length) { ctx.fillStyle='rgba(107,107,138,0.2)'; ctx.fillRect(0,c.height/2-0.5,c.width,1); return; }
+    ctx.clearRect(0,0,c.width,c.height);
+    rel.forEach(d => {
+      const x = ((d.t - f.start) / (f.end - f.start)) * c.width;
+      const bh = Math.max(1, (d.l/100)*c.height);
+      ctx.fillStyle = d.l>70?'rgba(255,82,82,.8)':d.l>40?'rgba(255,171,64,.8)':'rgba(0,229,255,.5)';
+      ctx.fillRect(x, c.height-bh, 2, bh);
+    });
+  });
+}
+
+// ── RECORDINGS PLAYER ─────────────────────────────────
+function recZoom(dir) {
+  const idx = REC_ZOOM_LEVELS.indexOf(recZoomLevel);
+  recZoomLevel = REC_ZOOM_LEVELS[Math.max(0, Math.min(REC_ZOOM_LEVELS.length-1, idx+dir))];
+  document.getElementById('rec-zoom-label').textContent = recZoomLevel + '×';
+  if (currentFile) drawRecGraph(currentStartTs);
+}
+
+async function playRecording(filename, startTs) {
+  if (isStreamPlaying) stopStream();
+  if (tlIsPlaying) stopTlPlay();
+
+  currentFile = filename; currentStartTs = startTs;
+  document.getElementById('rec-player-card').classList.add('visible');
+  document.getElementById('rec-player-label').textContent =
+    new Date(startTs * 1000).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  document.getElementById('rec-player-time').textContent = '—:——:——';
+  document.getElementById('rec-btn-play').textContent = '▶';
+  document.getElementById('rec-btn-play').disabled = true;
+
+  drawRecGraph(startTs);
+
+  if (!window.recAudio) {
+    window.recAudio = new Audio();
+    window.recAudio.ontimeupdate = updateRecTime;
+    window.recAudio.onended = () => { recIsPlaying = false; document.getElementById('rec-btn-play').textContent = '▶'; };
+    window.recAudio.onerror = () => { document.getElementById('rec-player-label').textContent = 'Error loading file.'; document.getElementById('rec-btn-play').disabled = false; };
+  }
+
+  window.recAudio.src = apiUrl('/audio/' + filename);
+  window.recAudio.load();
+  window.recAudio.oncanplay = () => {
+    window.recAudio.oncanplay = null;
+    window.recAudio.play().catch(()=>{});
+    recIsPlaying = true;
+    document.getElementById('rec-btn-play').textContent = '⏸';
+    document.getElementById('rec-btn-play').disabled = false;
+  };
+
+  renderRecordingsList();
+}
+
+function drawRecGraph(startTs) {
+  const scroll = document.getElementById('rec-graph-scroll');
+  const inner  = document.getElementById('rec-graph-inner');
+  const canvas = document.getElementById('rec-graph-canvas');
+  const viewW  = scroll.offsetWidth || window.innerWidth;
+  const totalW = viewW * recZoomLevel;
+  canvas.width = totalW; canvas.height = 100;
+  inner.style.width = totalW + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#1a1a26'; ctx.fillRect(0, 0, totalW, 100);
+
+  const duration = 3600;
+  const rel = activityData.filter(d => d.t >= startTs && d.t < startTs + duration);
+
+  if (!rel.length) {
+    ctx.fillStyle = 'rgba(107,107,138,0.5)';
+    ctx.font = '11px Space Mono, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('No activity data for this recording', totalW/2, 50);
+    return;
+  }
+
+  rel.forEach(d => {
+    const x = ((d.t - startTs) / duration) * totalW;
+    const bh = Math.max(2, (d.l/100) * 92);
+    const a = .4 + (d.l/100) * .6;
+    ctx.fillStyle = d.l>70?`rgba(255,82,82,${a})`:d.l>40?`rgba(255,171,64,${a})`:`rgba(0,229,255,${a*.7})`;
+    ctx.fillRect(x-1, 100-bh, 4, bh);
+  });
+
+  const step = recZoomLevel >= 4 ? 5 : recZoomLevel >= 2 ? 10 : 15;
+  ctx.font = '8px Space Mono, monospace';
+  for (let m = 0; m <= 60; m += step) {
+    const x = (m / 60) * totalW;
+    ctx.strokeStyle = m%15===0 ? 'rgba(255,255,255,.12)' : 'rgba(255,255,255,.05)';
+    ctx.lineWidth = m%15===0 ? 1 : 0.5;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,100); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.3)';
+    const label = new Date((startTs + m*60)*1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    ctx.fillText(label, x+3, 11);
+  }
+}
+
+function updateRecTime() {
+  if (!window.recAudio) return;
+  const t = window.recAudio.currentTime;
+  const dur = window.recAudio.duration || 3600;
+  document.getElementById('rec-player-time').textContent =
+    new Date((currentStartTs + t)*1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+  const canvas = document.getElementById('rec-graph-canvas');
+  const scroll = document.getElementById('rec-graph-scroll');
+  const x = (t / dur) * canvas.width;
+  document.getElementById('rec-graph-playhead').style.left = x + 'px';
+
+  const vl = scroll.scrollLeft, vr = vl + scroll.offsetWidth;
+  if (x < vl + 30 || x > vr - 30) scroll.scrollLeft = x - scroll.offsetWidth/2;
+}
+
+function toggleRecPlay() {
+  if (!window.recAudio || !window.recAudio.src) return;
+  if (recIsPlaying) { window.recAudio.pause(); document.getElementById('rec-btn-play').textContent='▶'; recIsPlaying=false; }
+  else { window.recAudio.play(); document.getElementById('rec-btn-play').textContent='⏸'; recIsPlaying=true; }
+}
+
+function stopRecPlay() {
+  if (window.recAudio) window.recAudio.pause();
+  recIsPlaying = false;
+  document.getElementById('rec-btn-play').textContent = '▶';
+}
+
+function recGraphClick(e) {
+  if (!window.recAudio || !window.recAudio.src) return;
+  const scroll = document.getElementById('rec-graph-scroll');
+  const canvas = document.getElementById('rec-graph-canvas');
+  const rect   = scroll.getBoundingClientRect();
+  const x = (e.clientX - rect.left) + scroll.scrollLeft;
+  const dur = window.recAudio.duration || 3600;
+  window.recAudio.currentTime = (x / canvas.width) * dur;
+  if (!recIsPlaying) { window.recAudio.play(); recIsPlaying=true; document.getElementById('rec-btn-play').textContent='⏸'; }
+}
+
+// ── ERROR BANNER ──────────────────────────────────────
+function showError(msg) {
+  const b = document.getElementById('error-banner');
+  b.textContent = msg; b.style.display = 'block';
+  setTimeout(() => { b.style.display = 'none'; }, 5000);
+}
+</script>
+</body>
+</html>
